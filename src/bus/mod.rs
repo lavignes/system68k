@@ -39,16 +39,19 @@ impl TestBus {
 }
 
 impl Bus for TestBus {
+    #[inline]
     fn read8(&self, addr: u32) -> Result<u8, Error> {
         let addr = addr as usize;
         Ok(self.mem[addr])
     }
 
+    #[inline]
     fn read16(&self, addr: u32) -> Result<u16, Error> {
         let addr = addr as usize;
         Ok(u16::from_be_bytes([self.mem[addr], self.mem[addr + 1]]))
     }
 
+    #[inline]
     fn read32(&self, addr: u32) -> Result<u32, Error> {
         let addr = addr as usize;
         Ok(u32::from_be_bytes([
@@ -59,12 +62,14 @@ impl Bus for TestBus {
         ]))
     }
 
+    #[inline]
     fn write8(&mut self, addr: u32, value: u8) -> Result<(), Error> {
         let addr = addr as usize;
         self.mem[addr] = value;
         Ok(())
     }
 
+    #[inline]
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), Error> {
         let addr = addr as usize;
         let bytes = value.to_be_bytes();
@@ -73,6 +78,7 @@ impl Bus for TestBus {
         Ok(())
     }
 
+    #[inline]
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), Error> {
         let addr = addr as usize;
         let bytes = value.to_be_bytes();

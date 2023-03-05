@@ -54,18 +54,11 @@ enum ComputedEffectiveAddress {
 pub struct Cpu {
     version: Version,
     data: [u32; 8],
-    addr: [u32; 8],
+    addr: [u32; 7],
     pc: u32,
-
+    usp: u32, // user stack pointer
     ssp: u32, // supervisor stack pointer
     sr: u16,  // status register
-
-    caar: u32, // cache access register
-    cacr: u32, // cache control register
-    dfc: u8,   // destination function code register
-    sfc: u8,   // source function code register
-    msp: u32,  // master stack pointer register
-    vbr: u32,  // vector base register
 
     decoder: Decoder,
 }
@@ -75,17 +68,11 @@ impl Cpu {
         Self {
             version,
             data: [0; 8],
-            addr: [0; 8],
+            addr: [0; 7],
             pc: 0,
+            usp: 0,
             ssp: 0,
             sr: 0,
-
-            caar: 0,
-            cacr: 0,
-            dfc: 0,
-            sfc: 0,
-            msp: 0,
-            vbr: 0,
 
             decoder: Decoder::new(version),
         }
@@ -195,27 +182,57 @@ impl Cpu {
             EffectiveAddress::AddressRegister(register) => {
                 Ok(ComputedEffectiveAddress::AddressRegister(register))
             }
-            EffectiveAddress::Address(register) => Ok(ComputedEffectiveAddress::Address(
-                self.addr[register as usize],
-            )),
-            EffectiveAddress::AddressWithPostIncrement(register) => {
-                let addr = self.addr[register as usize];
-                if (register == 7) && (increment == 1) {
-                    self.addr[7] = self.addr[7].wrapping_add(2);
+            EffectiveAddress::Address(register) => {
+                Ok(ComputedEffectiveAddress::Address(if register == 7 {
+                    if self.flag(StatusFlag::Supervisor) {
+                        self.ssp
+                    } else {
+                        self.usp
+                    }
                 } else {
-                    self.addr[register as usize] = self.addr[register as usize].wrapping_add(2);
-                }
-                Ok(ComputedEffectiveAddress::Address(addr))
+                    self.addr[register as usize]
+                }))
+            }
+            EffectiveAddress::AddressWithPostIncrement(register) => {
+                Ok(ComputedEffectiveAddress::Address(if register == 7 {
+                    if self.flag(StatusFlag::Supervisor) {
+                        let addr = self.ssp;
+                        self.ssp =
+                            self.ssp
+                                .wrapping_add(if increment == 1 { 2 } else { increment });
+                        addr
+                    } else {
+                        let addr = self.usp;
+                        self.usp =
+                            self.usp
+                                .wrapping_add(if increment == 1 { 2 } else { increment });
+                        addr
+                    }
+                } else {
+                    let addr = self.addr[register as usize];
+                    self.addr[register as usize] =
+                        self.addr[register as usize].wrapping_add(increment);
+                    addr
+                }))
             }
             EffectiveAddress::AddressWithPreDecrement(register) => {
-                if (register == 7) && (increment == 1) {
-                    self.addr[7] = self.addr[7].wrapping_sub(2);
+                Ok(ComputedEffectiveAddress::Address(if register == 7 {
+                    if self.flag(StatusFlag::Supervisor) {
+                        self.ssp =
+                            self.ssp
+                                .wrapping_sub(if increment == 1 { 2 } else { increment });
+                        self.ssp
+                    } else {
+                        self.usp =
+                            self.usp
+                                .wrapping_sub(if increment == 1 { 2 } else { increment });
+                        self.usp
+                    }
                 } else {
-                    self.addr[register as usize] = self.addr[register as usize].wrapping_sub(2);
-                }
-                Ok(ComputedEffectiveAddress::Address(
-                    self.addr[register as usize],
-                ))
+                    self.addr[register as usize] =
+                        self.addr[register as usize].wrapping_sub(increment);
+                    self.addr[register as usize]
+                }))
             }
             EffectiveAddress::AddressWithDisplacement(register) => {
                 // TODO: can I get away with converting back to u32?
@@ -234,10 +251,7 @@ impl Cpu {
                 ))
             }
             EffectiveAddress::PcWithIndex => todo!(),
-            EffectiveAddress::AbsoluteShort => {
-                Ok(ComputedEffectiveAddress::Address(self.fetch_long(bus)?))
-            }
-            EffectiveAddress::AbsoluteLong => {
+            EffectiveAddress::AbsoluteShort | EffectiveAddress::AbsoluteLong => {
                 Ok(ComputedEffectiveAddress::Address(self.fetch_long(bus)?))
             }
             EffectiveAddress::Immediate => Ok(ComputedEffectiveAddress::Immediate),
@@ -284,7 +298,15 @@ impl Cpu {
     ) -> Result<u32, Exception> {
         match ea {
             ComputedEffectiveAddress::DataRegister(register) => Ok(self.data[register as usize]),
-            ComputedEffectiveAddress::AddressRegister(register) => Ok(self.addr[register as usize]),
+            ComputedEffectiveAddress::AddressRegister(register) => Ok(if register == 7 {
+                if self.flag(StatusFlag::Supervisor) {
+                    self.ssp
+                } else {
+                    self.usp
+                }
+            } else {
+                self.addr[register as usize]
+            }),
             ComputedEffectiveAddress::Address(addr) => self.read_long(addr, bus),
             ComputedEffectiveAddress::Immediate => Ok(self.fetch_long(bus)?),
         }
@@ -341,8 +363,17 @@ impl Cpu {
                 Ok(())
             }
             ComputedEffectiveAddress::AddressRegister(register) => {
-                self.addr[register as usize] = value;
-                Ok(())
+                if register == 7 {
+                    if self.flag(StatusFlag::Supervisor) {
+                        self.ssp = value;
+                    } else {
+                        self.usp = value;
+                    }
+                    Ok(())
+                } else {
+                    self.addr[register as usize] = value;
+                    Ok(())
+                }
             }
             ComputedEffectiveAddress::Address(addr) => self.write_long(addr, value, bus),
             ComputedEffectiveAddress::Immediate => unreachable!(),
@@ -716,6 +747,75 @@ impl Cpu {
             }
 
             Instruction::Movep(_, _, _, _) => todo!("MOVEP not implemented yet! :("),
+
+            Instruction::Movea(size, ea, register) => match size {
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 2, bus)?;
+                    let value = ((self.read_ea_word(ea, bus)? as i16) as i32) as u32;
+                    if register == 7 {
+                        if self.flag(StatusFlag::Supervisor) {
+                            self.ssp = value;
+                        } else {
+                            self.usp = value;
+                        }
+                    } else {
+                        self.addr[register as usize] = value;
+                    }
+                    Ok(())
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 4, bus)?;
+                    let value = self.read_ea_long(ea, bus)?;
+                    if register == 7 {
+                        if self.flag(StatusFlag::Supervisor) {
+                            self.ssp = value;
+                        } else {
+                            self.usp = value;
+                        }
+                    } else {
+                        self.addr[register as usize] = value;
+                    }
+                    Ok(())
+                }
+
+                _ => unreachable!(),
+            },
+
+            Instruction::Move(size, src, dst) => match size {
+                Size::Byte => {
+                    let src = self.compute_ea(src, 1, bus)?;
+                    let value = self.read_ea_byte(src, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x80) == 0x80);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    let dst = self.compute_ea(dst, 1, bus)?;
+                    self.write_ea_byte(dst, value, bus)
+                }
+
+                Size::Word => {
+                    let src = self.compute_ea(src, 2, bus)?;
+                    let value = self.read_ea_word(src, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x8000) == 0x8000);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    let dst = self.compute_ea(dst, 2, bus)?;
+                    self.write_ea_word(dst, value, bus)
+                }
+
+                Size::Long => {
+                    let src = self.compute_ea(src, 4, bus)?;
+                    let value = self.read_ea_long(src, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x80000000) == 0x80000000);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    let dst = self.compute_ea(dst, 4, bus)?;
+                    self.write_ea_long(dst, value, bus)
+                }
+            },
 
             Instruction::Moveq(data, register) => {
                 // sign extend

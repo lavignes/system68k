@@ -49,6 +49,8 @@ pub enum Instruction {
     Bclr(Option<u8>, EffectiveAddress),
     Bset(Option<u8>, EffectiveAddress),
     Movep(Size, Target, u8, u8),
+    Movea(Size, EffectiveAddress, u8),
+    Move(Size, EffectiveAddress, EffectiveAddress),
 
     Moveq(u8, u8),
 }
@@ -161,6 +163,27 @@ fn ea_type2(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
             0b001 => Some(EffectiveAddress::AbsoluteLong),
             0b010 => Some(EffectiveAddress::PcWithDisplacement),
             0b011 => Some(EffectiveAddress::PcWithIndex),
+            _ => None,
+        },
+        _ => unreachable!(),
+    }
+}
+
+fn ea_type3(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+    match mode {
+        0b000 => Some(EffectiveAddress::DataRegister(register)),
+        0b001 => Some(EffectiveAddress::AddressRegister(register)),
+        0b010 => Some(EffectiveAddress::Address(register)),
+        0b011 => Some(EffectiveAddress::AddressWithPostIncrement(register)),
+        0b100 => Some(EffectiveAddress::AddressWithPreDecrement(register)),
+        0b101 => Some(EffectiveAddress::AddressWithDisplacement(register)),
+        0b110 => Some(EffectiveAddress::AddressWithIndex(register)),
+        0b111 => match register {
+            0b000 => Some(EffectiveAddress::AbsoluteShort),
+            0b001 => Some(EffectiveAddress::AbsoluteLong),
+            0b010 => Some(EffectiveAddress::PcWithDisplacement),
+            0b011 => Some(EffectiveAddress::PcWithIndex),
+            0b100 => Some(EffectiveAddress::Immediate),
             _ => None,
         },
         _ => unreachable!(),
@@ -322,15 +345,65 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
 }
 
 fn decode_1(version: Version, opcode: u16) -> Instruction {
-    Instruction::Illegal
+    let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
+    let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
+    let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
+    let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
+
+    if bits6_8 == 1 {
+        return Instruction::Illegal;
+    }
+
+    let src = ea_type0(version, bits3_5, bits0_2);
+    let dst = ea_type1(version, bits6_8, bits9_11);
+    match (src, dst) {
+        (Some(src), Some(dst)) => Instruction::Move(Size::Byte, src, dst),
+        _ => Instruction::Illegal,
+    }
 }
 
 fn decode_2(version: Version, opcode: u16) -> Instruction {
-    Instruction::Illegal
+    let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
+    let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
+    let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
+    let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
+
+    if bits6_8 == 1 {
+        return if let Some(ea) = ea_type3(version, bits3_5, bits0_2) {
+            Instruction::Movea(Size::Long, ea, bits9_11)
+        } else {
+            Instruction::Illegal
+        };
+    }
+
+    let src = ea_type0(version, bits3_5, bits0_2);
+    let dst = ea_type1(version, bits6_8, bits9_11);
+    match (src, dst) {
+        (Some(src), Some(dst)) => Instruction::Move(Size::Long, src, dst),
+        _ => Instruction::Illegal,
+    }
 }
 
 fn decode_3(version: Version, opcode: u16) -> Instruction {
-    Instruction::Illegal
+    let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
+    let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
+    let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
+    let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
+
+    if bits6_8 == 1 {
+        return if let Some(ea) = ea_type3(version, bits3_5, bits0_2) {
+            Instruction::Movea(Size::Word, ea, bits9_11)
+        } else {
+            Instruction::Illegal
+        };
+    }
+
+    let src = ea_type0(version, bits3_5, bits0_2);
+    let dst = ea_type1(version, bits6_8, bits9_11);
+    match (src, dst) {
+        (Some(src), Some(dst)) => Instruction::Move(Size::Word, src, dst),
+        _ => Instruction::Illegal,
+    }
 }
 
 fn decode_4(version: Version, opcode: u16) -> Instruction {
@@ -346,14 +419,13 @@ fn decode_6(version: Version, opcode: u16) -> Instruction {
 }
 
 fn decode_7(version: Version, opcode: u16) -> Instruction {
-    let bit8 = (opcode & 0b0000_0001_0000_0000) >> 8;
-    let bits9_11 = (opcode & 0b0000_1110_0000_0000) >> 9;
+    let bit8 = ((opcode & 0b0000_0001_0000_0000) >> 8) as u8;
+    let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
     if bit8 == 1 {
         return Instruction::Illegal;
     }
     let data = (opcode & 0xFF) as u8;
-    let register = bits9_11 as u8;
-    Instruction::Moveq(data, register)
+    Instruction::Moveq(data, bits9_11)
 }
 
 fn decode_8(version: Version, opcode: u16) -> Instruction {
