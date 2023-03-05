@@ -47,6 +47,7 @@ enum ComputedEffectiveAddress {
     DataRegister(u8),
     AddressRegister(u8),
     Address(u32),
+    Immediate,
 }
 
 #[derive(Debug)]
@@ -223,7 +224,7 @@ impl Cpu {
                     self.addr[register as usize].wrapping_add(displacement),
                 ))
             }
-            EffectiveAddress::AddressWithIndex(register) => unimplemented!(),
+            EffectiveAddress::AddressWithIndex(register) => todo!(),
             EffectiveAddress::PcWithDisplacement => {
                 let pc = self.pc;
                 // TODO: can I get away with converting back to u32?
@@ -232,14 +233,14 @@ impl Cpu {
                     pc.wrapping_add(displacement),
                 ))
             }
-            EffectiveAddress::PcWithIndex => unimplemented!(),
+            EffectiveAddress::PcWithIndex => todo!(),
             EffectiveAddress::AbsoluteShort => {
                 Ok(ComputedEffectiveAddress::Address(self.fetch_long(bus)?))
             }
             EffectiveAddress::AbsoluteLong => {
                 Ok(ComputedEffectiveAddress::Address(self.fetch_long(bus)?))
             }
-            EffectiveAddress::Immediate => unimplemented!(),
+            EffectiveAddress::Immediate => Ok(ComputedEffectiveAddress::Immediate),
         }
     }
 
@@ -253,8 +254,9 @@ impl Cpu {
             ComputedEffectiveAddress::DataRegister(register) => {
                 Ok(self.data[register as usize] as u8)
             }
-            ComputedEffectiveAddress::AddressRegister(register) => unreachable!(),
+            ComputedEffectiveAddress::AddressRegister(_) => unreachable!(),
             ComputedEffectiveAddress::Address(addr) => self.read_byte(addr, bus),
+            ComputedEffectiveAddress::Immediate => Ok(self.fetch_word(bus)? as u8),
         }
     }
 
@@ -268,8 +270,9 @@ impl Cpu {
             ComputedEffectiveAddress::DataRegister(register) => {
                 Ok(self.data[register as usize] as u16)
             }
-            ComputedEffectiveAddress::AddressRegister(register) => unreachable!(),
+            ComputedEffectiveAddress::AddressRegister(_) => unreachable!(),
             ComputedEffectiveAddress::Address(addr) => self.read_word(addr, bus),
+            ComputedEffectiveAddress::Immediate => Ok(self.fetch_word(bus)?),
         }
     }
 
@@ -283,6 +286,7 @@ impl Cpu {
             ComputedEffectiveAddress::DataRegister(register) => Ok(self.data[register as usize]),
             ComputedEffectiveAddress::AddressRegister(register) => Ok(self.addr[register as usize]),
             ComputedEffectiveAddress::Address(addr) => self.read_long(addr, bus),
+            ComputedEffectiveAddress::Immediate => Ok(self.fetch_long(bus)?),
         }
     }
 
@@ -299,8 +303,9 @@ impl Cpu {
                     (self.data[register as usize] & 0xFFFFFF00) | (value as u32);
                 Ok(())
             }
-            ComputedEffectiveAddress::AddressRegister(register) => unreachable!(),
+            ComputedEffectiveAddress::AddressRegister(_) => unreachable!(),
             ComputedEffectiveAddress::Address(addr) => self.write_byte(addr, value, bus),
+            ComputedEffectiveAddress::Immediate => unreachable!(),
         }
     }
 
@@ -317,8 +322,9 @@ impl Cpu {
                     (self.data[register as usize] & 0xFFFF0000) | (value as u32);
                 Ok(())
             }
-            ComputedEffectiveAddress::AddressRegister(register) => unreachable!(),
+            ComputedEffectiveAddress::AddressRegister(_) => unreachable!(),
             ComputedEffectiveAddress::Address(addr) => self.write_word(addr, value, bus),
+            ComputedEffectiveAddress::Immediate => unreachable!(),
         }
     }
 
@@ -339,6 +345,7 @@ impl Cpu {
                 Ok(())
             }
             ComputedEffectiveAddress::Address(addr) => self.write_long(addr, value, bus),
+            ComputedEffectiveAddress::Immediate => unreachable!(),
         }
     }
 
@@ -458,7 +465,7 @@ impl Cpu {
                     let lhs = self.read_ea_byte(ea, bus)?;
                     let imm = self.fetch_word(bus)? as u8;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x80) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
                     self.set_flag(StatusFlag::Carry, borrow);
@@ -472,7 +479,7 @@ impl Cpu {
                     let lhs = self.read_ea_word(ea, bus)?;
                     let imm = self.fetch_word(bus)?;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x8000) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
                     self.set_flag(StatusFlag::Carry, borrow);
@@ -486,7 +493,7 @@ impl Cpu {
                     let lhs = self.read_ea_long(ea, bus)?;
                     let imm = self.fetch_long(bus)?;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x80000000) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
                     self.set_flag(StatusFlag::Carry, borrow);
@@ -502,7 +509,7 @@ impl Cpu {
                     let lhs = self.read_ea_byte(ea, bus)?;
                     let imm = self.fetch_word(bus)? as u8;
                     let (result, carry) = lhs.carrying_add(imm, false);
-                    let overflow = ((lhs ^ imm ^ 0x80) & (imm ^ result) & 0x80) != 0;
+                    let overflow = lhs.checked_add(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
                     self.set_flag(StatusFlag::Carry, carry);
@@ -516,7 +523,7 @@ impl Cpu {
                     let lhs = self.read_ea_word(ea, bus)?;
                     let imm = self.fetch_word(bus)?;
                     let (result, carry) = lhs.carrying_add(imm, false);
-                    let overflow = ((lhs ^ imm ^ 0x8000) & (imm ^ result) & 0x8000) != 0;
+                    let overflow = lhs.checked_add(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
                     self.set_flag(StatusFlag::Carry, carry);
@@ -530,7 +537,7 @@ impl Cpu {
                     let lhs = self.read_ea_long(ea, bus)?;
                     let imm = self.fetch_long(bus)?;
                     let (result, carry) = lhs.carrying_add(imm, false);
-                    let overflow = ((lhs ^ imm ^ 0x80000000) & (imm ^ result) & 0x80000000) != 0;
+                    let overflow = lhs.checked_add(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
                     self.set_flag(StatusFlag::Carry, carry);
@@ -598,7 +605,7 @@ impl Cpu {
                     let lhs = self.read_ea_byte(ea, bus)?;
                     let imm = self.fetch_word(bus)? as u8;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x80) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
                     self.set_flag(StatusFlag::Extend, borrow);
@@ -611,7 +618,7 @@ impl Cpu {
                     let lhs = self.read_ea_word(ea, bus)?;
                     let imm = self.fetch_word(bus)?;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x8000) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
                     self.set_flag(StatusFlag::Extend, borrow);
@@ -624,7 +631,7 @@ impl Cpu {
                     let lhs = self.read_ea_long(ea, bus)?;
                     let imm = self.fetch_long(bus)?;
                     let (result, borrow) = lhs.borrowing_sub(imm, false);
-                    let overflow = ((lhs ^ imm) & (result ^ lhs) & 0x80000000) != 0;
+                    let overflow = lhs.checked_sub(imm).is_none();
                     self.set_flag(StatusFlag::Zero, result == 0);
                     self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
                     self.set_flag(StatusFlag::Extend, borrow);
@@ -633,7 +640,95 @@ impl Cpu {
                 }
             },
 
-            _ => unimplemented!(),
+            Instruction::Btst(register, ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let (value, mask) = if let ComputedEffectiveAddress::DataRegister(register) = ea {
+                    (self.data[register as usize], 0b11111)
+                } else {
+                    (self.read_ea_byte(ea, bus)? as u32, 0b111)
+                };
+                let bit = match register {
+                    Some(register) => self.data[register as usize] & mask,
+                    None => (self.fetch_word(bus)? as u32) & mask,
+                };
+                self.set_flag(StatusFlag::Zero, ((1 << bit) & value) == 0);
+                Ok(())
+            }
+
+            Instruction::Bchg(register, ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let (value, mask) = if let ComputedEffectiveAddress::DataRegister(register) = ea {
+                    (self.data[register as usize], 0b11111)
+                } else {
+                    (self.read_ea_byte(ea, bus)? as u32, 0b111)
+                };
+                let bit = match register {
+                    Some(register) => self.data[register as usize] & mask,
+                    None => (self.fetch_word(bus)? as u32) & mask,
+                };
+                self.set_flag(StatusFlag::Zero, ((1 << bit) & value) == 0);
+                let value = value ^ (1 << bit);
+                if let ComputedEffectiveAddress::DataRegister(_) = ea {
+                    self.write_ea_long(ea, value, bus)
+                } else {
+                    self.write_ea_byte(ea, value as u8, bus)
+                }
+            }
+
+            Instruction::Bclr(register, ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let (value, mask) = if let ComputedEffectiveAddress::DataRegister(register) = ea {
+                    (self.data[register as usize], 0b11111)
+                } else {
+                    (self.read_ea_byte(ea, bus)? as u32, 0b111)
+                };
+                let bit = match register {
+                    Some(register) => self.data[register as usize] & mask,
+                    None => (self.fetch_word(bus)? as u32) & mask,
+                };
+                self.set_flag(StatusFlag::Zero, ((1 << bit) & value) == 0);
+                let value = value & !(1 << bit);
+                if let ComputedEffectiveAddress::DataRegister(_) = ea {
+                    self.write_ea_long(ea, value, bus)
+                } else {
+                    self.write_ea_byte(ea, value as u8, bus)
+                }
+            }
+
+            Instruction::Bset(register, ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let (value, mask) = if let ComputedEffectiveAddress::DataRegister(register) = ea {
+                    (self.data[register as usize], 0b11111)
+                } else {
+                    (self.read_ea_byte(ea, bus)? as u32, 0b111)
+                };
+                let bit = match register {
+                    Some(register) => self.data[register as usize] & mask,
+                    None => (self.fetch_word(bus)? as u32) & mask,
+                };
+                self.set_flag(StatusFlag::Zero, ((1 << bit) & value) == 0);
+                let value = value | (1 << bit);
+                if let ComputedEffectiveAddress::DataRegister(_) = ea {
+                    self.write_ea_long(ea, value, bus)
+                } else {
+                    self.write_ea_byte(ea, value as u8, bus)
+                }
+            }
+
+            Instruction::Movep(_, _, _, _) => todo!("MOVEP not implemented yet! :("),
+
+            Instruction::Moveq(data, register) => {
+                // sign extend
+                let value = ((data as i8) as i32) as u32;
+                self.data[register as usize] = value;
+                self.set_flag(StatusFlag::Zero, value == 0);
+                self.set_flag(StatusFlag::Negative, (value & 0x80000000) != 0);
+                self.set_flag(StatusFlag::Overflow, false);
+                self.set_flag(StatusFlag::Carry, false);
+                Ok(())
+            }
+
+            _ => todo!(),
         }
     }
 }
