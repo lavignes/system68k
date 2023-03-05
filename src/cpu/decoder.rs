@@ -14,6 +14,26 @@ pub enum Target {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Condition {
+    True,
+    False,
+    Higher,
+    LowerOrSame,
+    CarryClear,
+    CarrtSet,
+    NotEqual,
+    Equal,
+    OverflowClear,
+    OverflowSet,
+    Plus,
+    Minus,
+    GreaterOrEqual,
+    LessThan,
+    GreaterThan,
+    LessOrEqual,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum EffectiveAddress {
     DataRegister(u8),
     AddressRegister(u8),
@@ -31,7 +51,6 @@ pub enum EffectiveAddress {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    Illegal,
     OriToCcr,
     OriToSr,
     Ori(Size, EffectiveAddress),
@@ -51,8 +70,45 @@ pub enum Instruction {
     Movep(Size, Target, u8, u8),
     Movea(Size, EffectiveAddress, u8),
     Move(Size, EffectiveAddress, EffectiveAddress),
-
+    MoveFromSr(EffectiveAddress),
+    MoveToCcr(EffectiveAddress),
+    MoveToSr(EffectiveAddress),
+    Negx(Size, EffectiveAddress),
+    Clr(Size, EffectiveAddress),
+    Neg(Size, EffectiveAddress),
+    Not(Size, EffectiveAddress),
+    Ext(Size, u8),
+    Nbcd(EffectiveAddress),
+    Swap(u8),
+    Pea(EffectiveAddress),
+    Illegal,
+    Tas(EffectiveAddress),
+    Tst(Size, EffectiveAddress),
+    Trap(u8),
+    Link(u8),
+    MoveUsp(Target, u8),
+    Reset,
+    Nop,
+    Stop,
+    Rte,
+    Rts,
+    Trapv,
+    Rtr,
+    Jsr(EffectiveAddress),
+    Jmp(EffectiveAddress),
+    Movem(Size, Target, EffectiveAddress),
+    Lea(EffectiveAddress, u8),
+    Chk(EffectiveAddress, u8),
+    Addq(Size, u8, EffectiveAddress),
+    Subq(Size, u8, EffectiveAddress),
+    Scc(Condition, EffectiveAddress),
+    Dbcc(Condition, u8),
+    Bra(u8),
+    Bsr(u8),
+    Bcc(Condition, u8),
     Moveq(u8, u8),
+    Divu(EffectiveAddress, u8),
+    Divs(EffectiveAddress, u8),
 }
 
 lazy_static::lazy_static! {
@@ -407,6 +463,49 @@ fn decode_3(version: Version, opcode: u16) -> Instruction {
 }
 
 fn decode_4(version: Version, opcode: u16) -> Instruction {
+    let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
+    let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
+    let bits6_7 = ((opcode & 0b0000_0000_1100_0000) >> 6) as u8;
+    let bits8_11 = ((opcode & 0b0000_1111_0000_0000) >> 8) as u8;
+    let bit11 = ((opcode & 0b0000_1000_0000_0000) >> 11) as u8;
+
+    if bit11 == 0 {
+        if bits6_7 == 0b11 {
+            match bits8_11 {
+                0b0000 if let Some(ea) = ea_type0(version, bits3_5, bits0_2) => {
+                    return Instruction::MoveFromSr(ea);
+                }
+
+                0b0100 if let Some(ea) = ea_type1(version, bits3_5, bits0_2)=> {
+                    return Instruction::MoveToCcr(ea);
+                }
+
+                0b0110 if let Some(ea) = ea_type1(version, bits3_5, bits0_2) => {
+                    return Instruction::MoveToSr(ea);
+                }
+
+                _ => {}
+            }
+        }
+
+        let size = match bits6_7 {
+            0b00 => Some(Size::Byte),
+            0b01 => Some(Size::Word),
+            0b10 => Some(Size::Long),
+            _ => None,
+        };
+
+        if let (Some(ea), Some(size)) = (ea_type0(version, bits3_5, bits0_2), size) {
+            match bits8_11 {
+                0b0000 => return Instruction::Negx(size, ea),
+                0b0010 => return Instruction::Clr(size, ea),
+                0b0100 => return Instruction::Neg(size, ea),
+                0b0110 => return Instruction::Not(size, ea),
+                _ => {}
+            }
+        }
+    }
+
     Instruction::Illegal
 }
 

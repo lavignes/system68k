@@ -751,15 +751,16 @@ impl Cpu {
             Instruction::Movea(size, ea, register) => match size {
                 Size::Word => {
                     let ea = self.compute_ea(ea, 2, bus)?;
-                    let value = ((self.read_ea_word(ea, bus)? as i16) as i32) as u32;
+                    let value = self.read_ea_word(ea, bus)? as u32;
                     if register == 7 {
                         if self.flag(StatusFlag::Supervisor) {
-                            self.ssp = value;
+                            self.ssp = (self.ssp & 0xFFFF0000) | value;
                         } else {
-                            self.usp = value;
+                            self.usp = (self.usp & 0xFFFF0000) | value;
                         }
                     } else {
-                        self.addr[register as usize] = value;
+                        self.addr[register as usize] =
+                            (self.addr[register as usize] & 0xFFFF0000) | value;
                     }
                     Ok(())
                 }
@@ -814,6 +815,191 @@ impl Cpu {
                     self.set_flag(StatusFlag::Overflow, false);
                     let dst = self.compute_ea(dst, 4, bus)?;
                     self.write_ea_long(dst, value, bus)
+                }
+            },
+
+            Instruction::MoveFromSr(ea) => {
+                self.assert_supervisor()?;
+                let ea = self.compute_ea(ea, 2, bus)?;
+                self.write_ea_word(ea, self.sr, bus)
+            }
+
+            Instruction::MoveToCcr(ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let value = self.read_ea_byte(ea, bus)? as u16;
+                self.set_sr((self.sr & 0xFF00) | value);
+                Ok(())
+            }
+
+            Instruction::MoveToSr(ea) => {
+                self.assert_supervisor()?;
+                let ea = self.compute_ea(ea, 2, bus)?;
+                let value = self.read_ea_word(ea, bus)?;
+                self.set_sr(value);
+                Ok(())
+            }
+
+            Instruction::Negx(size, ea) => match size {
+                Size::Byte => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_byte(ea, bus)?;
+                    let (result, borrow) = 0u8.borrowing_sub(value, self.flag(StatusFlag::Extend));
+                    let overflow = if let Some(result) = 0u8.checked_sub(value) {
+                        result
+                            .checked_sub(if self.flag(StatusFlag::Extend) { 0 } else { 1 })
+                            .is_none()
+                    } else {
+                        true
+                    };
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_byte(ea, result, bus)
+                }
+
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_word(ea, bus)?;
+                    let (result, borrow) = 0u16.borrowing_sub(value, self.flag(StatusFlag::Extend));
+                    let overflow = if let Some(result) = 0u16.checked_sub(value) {
+                        result
+                            .checked_sub(if self.flag(StatusFlag::Extend) { 0 } else { 1 })
+                            .is_none()
+                    } else {
+                        true
+                    };
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_word(ea, result, bus)
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_long(ea, bus)?;
+                    let (result, borrow) = 0u32.borrowing_sub(value, self.flag(StatusFlag::Extend));
+                    let overflow = if let Some(result) = 0u32.checked_sub(value) {
+                        result
+                            .checked_sub(if self.flag(StatusFlag::Extend) { 0 } else { 1 })
+                            .is_none()
+                    } else {
+                        true
+                    };
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_long(ea, result, bus)
+                }
+            },
+
+            Instruction::Clr(size, ea) => match size {
+                Size::Byte => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    self.set_flag(StatusFlag::Zero, true);
+                    self.set_flag(StatusFlag::Negative, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.write_ea_byte(ea, 0, bus)
+                }
+
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 2, bus)?;
+                    self.set_flag(StatusFlag::Zero, true);
+                    self.set_flag(StatusFlag::Negative, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.write_ea_word(ea, 0, bus)
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 4, bus)?;
+                    self.set_flag(StatusFlag::Zero, true);
+                    self.set_flag(StatusFlag::Negative, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.write_ea_long(ea, 0, bus)
+                }
+            },
+
+            Instruction::Neg(size, ea) => match size {
+                Size::Byte => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_byte(ea, bus)?;
+                    let (result, borrow) = 0u8.borrowing_sub(value, false);
+                    let overflow = 0u8.checked_sub(value).is_none();
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_byte(ea, result, bus)
+                }
+
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_word(ea, bus)?;
+                    let (result, borrow) = 0u16.borrowing_sub(value, false);
+                    let overflow = 0u16.checked_sub(value).is_none();
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_word(ea, result, bus)
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_long(ea, bus)?;
+                    let (result, borrow) = 0u32.borrowing_sub(value, false);
+                    let overflow = 0u32.checked_sub(value).is_none();
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
+                    self.set_flag(StatusFlag::Carry, borrow);
+                    self.set_flag(StatusFlag::Extend, borrow);
+                    self.set_flag(StatusFlag::Overflow, overflow);
+                    self.write_ea_long(ea, result, bus)
+                }
+            },
+
+            Instruction::Not(size, ea) => match size {
+                Size::Byte => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_byte(ea, bus)?;
+                    let result = !value;
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.write_ea_byte(ea, result, bus)
+                }
+
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 2, bus)?;
+                    let value = self.read_ea_word(ea, bus)?;
+                    let result = !value;
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.write_ea_word(ea, result, bus)
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 4, bus)?;
+                    let value = self.read_ea_long(ea, bus)?;
+                    let result = !value;
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.write_ea_long(ea, result, bus)
                 }
             },
 
