@@ -120,7 +120,7 @@ pub struct MC68kBreakpointKind;
 impl BreakpointKind for MC68kBreakpointKind {
     #[inline]
     fn from_usize(kind: usize) -> Option<Self> {
-        None
+        Some(Self)
     }
 }
 
@@ -139,7 +139,7 @@ impl Arch for MC68k {
 
     #[inline]
     fn single_step_gdb_behavior() -> SingleStepGdbBehavior {
-        SingleStepGdbBehavior::Ignored
+        SingleStepGdbBehavior::Optional
     }
 }
 
