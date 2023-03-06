@@ -7,7 +7,7 @@ use std::{
 };
 
 use clap::Parser;
-use gdb::SystemTarget;
+use gdb::GdbSystem;
 use gdbstub::{
     common::Signal,
     conn::{Connection, ConnectionExt},
@@ -35,7 +35,7 @@ fn wait_for_gdb_connection<S: ToSocketAddrs + Debug>(sockaddr: S) -> io::Result<
 struct GdbEventLoop;
 
 impl BlockingEventLoop for GdbEventLoop {
-    type Target = SystemTarget;
+    type Target = GdbSystem;
     type Connection = TcpStream;
     type StopReason = SingleThreadStopReason<u32>;
 
@@ -99,7 +99,7 @@ fn main() -> io::Result<()> {
     let mut sys = System::new(rom);
     sys.reset();
 
-    let mut sys = SystemTarget::new(sys);
+    let mut sys = GdbSystem::new(sys);
 
     if let Some(sockaddr) = args.debug {
         let conn = wait_for_gdb_connection(sockaddr)?;

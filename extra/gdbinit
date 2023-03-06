@@ -1,0 +1,5 @@
+set architecture m68k
+set disassemble-next-line on
+tui new-layout sys68k {-horizontal asm 1 regs 1} 2 status 0 cmd 1
+layout sys68k
+focus cmd

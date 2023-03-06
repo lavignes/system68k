@@ -11,7 +11,10 @@ use gdbstub::{
         ext::{
             base::{
                 single_register_access::{SingleRegisterAccess, SingleRegisterAccessOps},
-                singlethread::{SingleThreadBase, SingleThreadResume, SingleThreadResumeOps},
+                singlethread::{
+                    SingleThreadBase, SingleThreadResume, SingleThreadResumeOps,
+                    SingleThreadSingleStep, SingleThreadSingleStepOps,
+                },
                 BaseOps,
             },
             breakpoints::{Breakpoints, BreakpointsOps, SwBreakpoint, SwBreakpointOps},
@@ -143,17 +146,24 @@ impl Arch for MC68k {
     }
 }
 
-pub struct SystemTarget {
-    sys: System,
-    breakpoints: HashSet<u32>,
+pub enum Mode {
+    Continue,
+    Step,
 }
 
-impl SystemTarget {
+pub struct GdbSystem {
+    sys: System,
+    breakpoints: HashSet<u32>,
+    mode: Mode,
+}
+
+impl GdbSystem {
     #[inline]
     pub fn new(sys: System) -> Self {
         Self {
             sys,
             breakpoints: HashSet::new(),
+            mode: Mode::Continue,
         }
     }
 
@@ -164,19 +174,23 @@ impl SystemTarget {
 
     #[inline]
     pub fn step(&mut self) -> bool {
-        let Self { sys, breakpoints } = self;
+        self.sys.step();
+        let pc = self.cpu().pc();
 
-        sys.step();
-        let pc = sys.cpu().pc();
-
-        if breakpoints.contains(&pc) {
+        if self.breakpoints.contains(&pc) {
+            self.mode = Mode::Step;
             return true;
         }
+
+        if let Mode::Step = self.mode {
+            return true;
+        }
+
         false
     }
 }
 
-impl Target for SystemTarget {
+impl Target for GdbSystem {
     type Arch = MC68k;
     type Error = &'static str;
 
@@ -191,7 +205,7 @@ impl Target for SystemTarget {
     }
 }
 
-impl SingleThreadBase for SystemTarget {
+impl SingleThreadBase for GdbSystem {
     #[inline]
     fn read_registers(
         &mut self,
@@ -257,7 +271,7 @@ impl SingleThreadBase for SystemTarget {
     }
 }
 
-impl SingleRegisterAccess<()> for SystemTarget {
+impl SingleRegisterAccess<()> for GdbSystem {
     #[inline]
     fn read_register(
         &mut self,
@@ -295,14 +309,14 @@ impl SingleRegisterAccess<()> for SystemTarget {
     }
 }
 
-impl Breakpoints for SystemTarget {
+impl Breakpoints for GdbSystem {
     #[inline]
     fn support_sw_breakpoint(&mut self) -> Option<SwBreakpointOps<'_, Self>> {
         Some(self)
     }
 }
 
-impl SwBreakpoint for SystemTarget {
+impl SwBreakpoint for GdbSystem {
     #[inline]
     fn add_sw_breakpoint(
         &mut self,
@@ -322,11 +336,26 @@ impl SwBreakpoint for SystemTarget {
     }
 }
 
-impl SingleThreadResume for SystemTarget {
+impl SingleThreadResume for GdbSystem {
     fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
         if signal.is_some() {
             return Err("no support for resuming from a signal");
         }
+        self.mode = Mode::Continue;
+        Ok(())
+    }
+
+    fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<'_, Self>> {
+        Some(self)
+    }
+}
+
+impl SingleThreadSingleStep for GdbSystem {
+    fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
+        if signal.is_some() {
+            return Err("no support for stepping with a signal");
+        }
+        self.mode = Mode::Step;
         Ok(())
     }
 }
