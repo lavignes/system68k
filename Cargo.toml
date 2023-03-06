@@ -6,5 +6,7 @@ edition = "2021"
 [dependencies]
 thiserror = "1"
 lazy_static = "1"
+clap = { version = "4", features = ["derive"] }
+gdbstub = "0.6"
 
 [dev-dependencies]

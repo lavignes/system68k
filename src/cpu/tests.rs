@@ -11,7 +11,7 @@ const ROM1: &'static [u8] = &[
 fn ori_to_ccr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x00, 0x3C, 0x00, 0x07, // ORI #7, CCR
+        0x00, 0x3C, 0x00, 0x07, // ORI #7,CCR
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(Instruction::OriToCcr, cpu.decoder.decode(0x003C));
@@ -30,7 +30,7 @@ fn ori_to_ccr() {
 fn ori_to_sr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x00, 0x7C, 0x07, 0x07, // ORI #$0707, SR
+        0x00, 0x7C, 0x07, 0x07, // ORI #$0707,SR
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(Instruction::OriToSr, cpu.decoder.decode(0x007C));
@@ -154,7 +154,7 @@ fn bset() {
 fn movea() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x30, 0x40, 0x00, 0x00, // MOVEA.W D0,A0
+        0x30, 0x40, // MOVEA.W D0,A0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -175,7 +175,7 @@ fn movea() {
 fn r#move() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x12, 0x00, 0x00, 0x00, // MOVE.B D1,D0
+        0x12, 0x00, // MOVE.B D1,D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -199,7 +199,7 @@ fn r#move() {
 fn move_from_sr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x40, 0xC0, 0x00, 0x00, // MOVE SR,D0
+        0x40, 0xC0, // MOVE SR,D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -219,7 +219,7 @@ fn move_from_sr() {
 fn move_to_ccr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x44, 0xC0, 0x00, 0x00, // MOVE D0,CCR
+        0x44, 0xC0, // MOVE D0,CCR
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -239,7 +239,7 @@ fn move_to_ccr() {
 fn move_to_sr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x46, 0xC0, 0x00, 0x00, // MOVE D0,SR
+        0x46, 0xC0, // MOVE D0,SR
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -259,7 +259,7 @@ fn move_to_sr() {
 fn negx() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x40, 0x80, 0x00, 0x00, // NEGX.L D0
+        0x40, 0x80, // NEGX.L D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -284,7 +284,7 @@ fn negx() {
 fn clr() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x42, 0x40, 0x00, 0x00, // CLR.W D0
+        0x42, 0x40, // CLR.W D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -310,7 +310,7 @@ fn clr() {
 fn neg() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x44, 0x00, 0x00, 0x00, // NEG.B D0
+        0x44, 0x00, // NEG.B D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -335,7 +335,7 @@ fn neg() {
 fn not() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x46, 0x40, 0x00, 0x00, // NOT.W D0
+        0x46, 0x40, // NOT.W D0
     ]);
     let mut cpu = Cpu::new(Version::MC68000);
     assert_eq!(
@@ -353,4 +353,69 @@ fn not() {
     assert!(cpu.flag(StatusFlag::Negative));
     assert!(!cpu.flag(StatusFlag::Overflow));
     assert!(!cpu.flag(StatusFlag::Carry));
+}
+
+#[test]
+fn ext() {
+    #[rustfmt::skip]
+    let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
+        0x48, 0x80, // EXT.W D0
+    ]);
+    let mut cpu = Cpu::new(Version::MC68000);
+    assert_eq!(Instruction::Ext(Size::Word, 0), cpu.decoder.decode(0x4880));
+
+    cpu.reset(&mut bus);
+    cpu.data[0] = 0x80;
+
+    cpu.step(&mut bus);
+
+    assert_eq!(cpu.data[0], 0x0000FF80);
+    assert!(!cpu.flag(StatusFlag::Zero));
+    assert!(cpu.flag(StatusFlag::Negative));
+    assert!(!cpu.flag(StatusFlag::Overflow));
+    assert!(!cpu.flag(StatusFlag::Carry));
+}
+
+#[test]
+fn swap() {
+    #[rustfmt::skip]
+    let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
+        0x48, 0x40, // SWAP D0
+    ]);
+    let mut cpu = Cpu::new(Version::MC68000);
+    assert_eq!(Instruction::Swap(0), cpu.decoder.decode(0x4840));
+
+    cpu.reset(&mut bus);
+    cpu.data[0] = 0x12345678;
+
+    cpu.step(&mut bus);
+
+    assert_eq!(cpu.data[0], 0x56781234);
+    assert!(!cpu.flag(StatusFlag::Zero));
+    assert!(!cpu.flag(StatusFlag::Negative));
+    assert!(!cpu.flag(StatusFlag::Overflow));
+    assert!(!cpu.flag(StatusFlag::Carry));
+}
+
+#[test]
+fn pea() {
+    #[rustfmt::skip]
+    let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
+        0x48, 0x78, 0x04, 0x00 // PEA ($0400).W
+    ]);
+    let mut cpu = Cpu::new(Version::MC68000);
+    assert_eq!(
+        Instruction::Pea(EffectiveAddress::AbsoluteShort),
+        cpu.decoder.decode(0x4878)
+    );
+
+    cpu.reset(&mut bus);
+
+    cpu.step(&mut bus);
+
+    assert_eq!(cpu.ssp, 0x0FFC);
+    assert_eq!(bus.mem()[0x00000FFC], 0x48);
+    assert_eq!(bus.mem()[0x00000FFD], 0x78);
+    assert_eq!(bus.mem()[0x00000FFE], 0x04);
+    assert_eq!(bus.mem()[0x00000FFF], 0x00);
 }

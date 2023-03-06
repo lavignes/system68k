@@ -61,6 +61,8 @@ pub struct Cpu {
     sr: u16,  // status register
 
     decoder: Decoder,
+
+    is_stopped: bool,
 }
 
 impl Cpu {
@@ -75,6 +77,8 @@ impl Cpu {
             sr: 0,
 
             decoder: Decoder::new(version),
+
+            is_stopped: false,
         }
     }
 
@@ -85,12 +89,58 @@ impl Cpu {
     }
 
     #[inline]
+    pub fn data(&self, register: usize) -> u32 {
+        self.data[register]
+    }
+
+    #[inline]
+    pub fn set_data(&mut self, register: usize, value: u32) {
+        self.data[register] = value
+    }
+
+    #[inline]
+    pub fn addr(&self, register: usize) -> u32 {
+        if register == 7 {
+            if self.flag(StatusFlag::Supervisor) {
+                self.ssp
+            } else {
+                self.usp
+            }
+        } else {
+            self.addr[register]
+        }
+    }
+
+    #[inline]
+    pub fn set_addr(&mut self, register: usize, value: u32) {
+        if register == 7 {
+            if self.flag(StatusFlag::Supervisor) {
+                self.ssp = value;
+            } else {
+                self.usp = value;
+            }
+        } else {
+            self.addr[register] = value;
+        }
+    }
+
+    #[inline]
+    pub fn pc(&self) -> u32 {
+        self.pc
+    }
+
+    #[inline]
+    pub fn set_pc(&mut self, value: u32) {
+        self.pc = value;
+    }
+
+    #[inline]
     pub fn sr(&self) -> u16 {
         self.sr
     }
 
     #[inline]
-    fn set_sr(&mut self, value: u16) {
+    pub fn set_sr(&mut self, value: u16) {
         let sr_mask = if self.version <= Version::MC68010 {
             0xA71F
         } else {
@@ -121,8 +171,14 @@ impl Cpu {
         Ok(())
     }
 
+    #[inline]
     pub fn step(&mut self, bus: &mut dyn Bus) {
         self.decode_execute(bus).unwrap();
+    }
+
+    #[inline]
+    pub fn is_stopped(&self) -> bool {
+        self.is_stopped
     }
 
     #[inline]
@@ -251,7 +307,10 @@ impl Cpu {
                 ))
             }
             EffectiveAddress::PcWithIndex => todo!(),
-            EffectiveAddress::AbsoluteShort | EffectiveAddress::AbsoluteLong => {
+            EffectiveAddress::AbsoluteShort => Ok(ComputedEffectiveAddress::Address(
+                self.fetch_word(bus)? as u32,
+            )),
+            EffectiveAddress::AbsoluteLong => {
                 Ok(ComputedEffectiveAddress::Address(self.fetch_long(bus)?))
             }
             EffectiveAddress::Immediate => Ok(ComputedEffectiveAddress::Immediate),
@@ -380,12 +439,32 @@ impl Cpu {
         }
     }
 
+    #[inline]
+    fn push_word(&mut self, value: u32, bus: &mut dyn Bus) -> Result<(), Exception> {
+        if self.flag(StatusFlag::Supervisor) {
+            self.ssp = self.ssp.wrapping_sub(2);
+            self.write_long(self.ssp, value, bus)
+        } else {
+            self.usp = self.usp.wrapping_sub(2);
+            self.write_long(self.usp, value, bus)
+        }
+    }
+
+    #[inline]
+    fn push_long(&mut self, value: u32, bus: &mut dyn Bus) -> Result<(), Exception> {
+        if self.flag(StatusFlag::Supervisor) {
+            self.ssp = self.ssp.wrapping_sub(4);
+            self.write_long(self.ssp, value, bus)
+        } else {
+            self.usp = self.usp.wrapping_sub(4);
+            self.write_long(self.usp, value, bus)
+        }
+    }
+
     fn decode_execute(&mut self, bus: &mut dyn Bus) -> Result<(), Exception> {
         let opcode = self.fetch_word(bus)?;
 
         match self.decoder.decode(opcode) {
-            Instruction::Illegal => Err(Exception::IllegalInstruction(opcode)),
-
             Instruction::OriToCcr => {
                 let value = self.fetch_word(bus)?;
                 let ccr = self.sr & 0x00FF;
@@ -1003,12 +1082,68 @@ impl Cpu {
                 }
             },
 
+            Instruction::Ext(size, register) => match size {
+                Size::Word => {
+                    let result = (((self.data[register as usize] as u8) as i8) as i16) as u16;
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x8000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.data[register as usize] =
+                        (self.data[register as usize] & 0xFFFF0000) | (result as u32);
+                    Ok(())
+                }
+
+                Size::Long => {
+                    let result = (((self.data[register as usize] as u16) as i16) as i32) as u32;
+                    self.set_flag(StatusFlag::Zero, result == 0);
+                    self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    self.data[register as usize] = result;
+                    Ok(())
+                }
+
+                _ => unreachable!(),
+            },
+
+            Instruction::Nbcd(_) => todo!("NBCD not implemented yet! :("),
+
+            Instruction::Swap(register) => {
+                let value = self.data[register as usize];
+                let result = (value << 16) | (value >> 16);
+                self.data[register as usize] = result;
+                self.set_flag(StatusFlag::Zero, result == 0);
+                self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
+                self.set_flag(StatusFlag::Overflow, false);
+                self.set_flag(StatusFlag::Carry, false);
+                Ok(())
+            }
+
+            Instruction::Pea(ea) => {
+                let ea = self.compute_ea(ea, 4, bus)?;
+                let value = self.read_ea_long(ea, bus)?;
+                self.push_long(value, bus)
+            }
+
+            Instruction::Illegal => Err(Exception::IllegalInstruction(opcode)),
+
+            Instruction::Tas(ea) => {
+                let ea = self.compute_ea(ea, 1, bus)?;
+                let value = self.read_ea_byte(ea, bus)?;
+                self.set_flag(StatusFlag::Zero, value == 0);
+                self.set_flag(StatusFlag::Negative, (value & 0x80) != 0);
+                self.set_flag(StatusFlag::Overflow, false);
+                self.set_flag(StatusFlag::Carry, false);
+                self.write_ea_byte(ea, value | 0x80, bus)
+            }
+
             Instruction::Moveq(data, register) => {
                 // sign extend
-                let value = ((data as i8) as i32) as u32;
-                self.data[register as usize] = value;
-                self.set_flag(StatusFlag::Zero, value == 0);
-                self.set_flag(StatusFlag::Negative, (value & 0x80000000) != 0);
+                let result = ((data as i8) as i32) as u32;
+                self.data[register as usize] = result;
+                self.set_flag(StatusFlag::Zero, result == 0);
+                self.set_flag(StatusFlag::Negative, (result & 0x80000000) != 0);
                 self.set_flag(StatusFlag::Overflow, false);
                 self.set_flag(StatusFlag::Carry, false);
                 Ok(())

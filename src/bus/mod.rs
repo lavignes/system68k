@@ -33,7 +33,7 @@ impl TestBus {
     }
 
     #[inline]
-    fn mem(&self) -> &[u8] {
+    pub fn mem(&self) -> &[u8] {
         &self.mem
     }
 }

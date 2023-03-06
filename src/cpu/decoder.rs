@@ -86,6 +86,7 @@ pub enum Instruction {
     Tst(Size, EffectiveAddress),
     Trap(u8),
     Link(u8),
+    Unlk(u8),
     MoveUsp(Target, u8),
     Reset,
     Nop,
@@ -240,6 +241,26 @@ fn ea_type3(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
             0b010 => Some(EffectiveAddress::PcWithDisplacement),
             0b011 => Some(EffectiveAddress::PcWithIndex),
             0b100 => Some(EffectiveAddress::Immediate),
+            _ => None,
+        },
+        _ => unreachable!(),
+    }
+}
+
+fn ea_type4(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+    match mode {
+        0b000 => None,
+        0b001 => None,
+        0b010 => Some(EffectiveAddress::Address(register)),
+        0b011 => None,
+        0b100 => None,
+        0b101 => Some(EffectiveAddress::AddressWithDisplacement(register)),
+        0b110 => Some(EffectiveAddress::AddressWithIndex(register)),
+        0b111 => match register {
+            0b000 => Some(EffectiveAddress::AbsoluteShort),
+            0b001 => Some(EffectiveAddress::AbsoluteLong),
+            0b010 => Some(EffectiveAddress::PcWithDisplacement),
+            0b011 => Some(EffectiveAddress::PcWithIndex),
             _ => None,
         },
         _ => unreachable!(),
@@ -464,8 +485,15 @@ fn decode_3(version: Version, opcode: u16) -> Instruction {
 
 fn decode_4(version: Version, opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
+    let bits0_3 = ((opcode & 0b0000_0000_0000_1111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
+    let bits3_11 = ((opcode & 0b0000_1111_1111_1000) >> 3) as u16;
+    let bits4_11 = ((opcode & 0b0000_1111_1111_0000) >> 4) as u8;
+    let bit6 = ((opcode & 0b0000_0000_0100_0000) >> 6) as u8;
+    let bit7 = ((opcode & 0b0000_0000_1000_0000) >> 7) as u8;
     let bits6_7 = ((opcode & 0b0000_0000_1100_0000) >> 6) as u8;
+    let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
+    let bits6_11 = ((opcode & 0b0000_1111_1100_0000) >> 6) as u8;
     let bits8_11 = ((opcode & 0b0000_1111_0000_0000) >> 8) as u8;
     let bit11 = ((opcode & 0b0000_1000_0000_0000) >> 11) as u8;
 
@@ -504,6 +532,60 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
                 _ => {}
             }
         }
+    }
+
+    if bits8_11 == 0b1000 {
+        if (bit7 == 1) && (bits3_5 == 0) {
+            let size = if bit6 == 0 { Size::Word } else { Size::Long };
+            return Instruction::Ext(size, bits0_2);
+        }
+
+        if bits6_7 == 0 {
+            if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                return Instruction::Nbcd(ea);
+            }
+        }
+
+        if bits6_8 == 0b001 {
+            if bits3_5 == 0 {
+                return Instruction::Swap(bits0_2);
+            } else if let Some(ea) = ea_type4(version, bits3_5, bits0_2) {
+                return Instruction::Pea(ea);
+            }
+        }
+    }
+
+    // the official "illegal" instruction
+    if opcode == 0b0100101011111100 {
+        return Instruction::Illegal;
+    }
+
+    if bits6_11 == 0b101011 {
+        if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+            return Instruction::Tas(ea);
+        }
+    }
+
+    if bits8_11 == 0b1010 {
+        let size = match bits6_7 {
+            0b00 => Some(Size::Byte),
+            0b01 => Some(Size::Byte),
+            0b10 => Some(Size::Byte),
+            _ => None,
+        };
+        if let (Some(ea), Some(size)) = (ea_type0(version, bits3_5, bits0_2), size) {
+            return Instruction::Tst(size, ea);
+        }
+    }
+
+    if bits4_11 == 0b11100100 {
+        return Instruction::Trap(bits0_3);
+    }
+
+    if bits3_11 == 0b111001010 {
+        return Instruction::Link(bits0_2);
+    } else if bits3_11 == 0b111001011 {
+        return Instruction::Unlk(bits0_2);
     }
 
     Instruction::Illegal
