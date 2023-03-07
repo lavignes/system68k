@@ -13,7 +13,7 @@ fn ori_to_ccr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x00, 0x3C, 0x00, 0x07, // ORI #7,CCR
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(Instruction::OriToCcr, cpu.decoder.decode(0x003C));
 
     bus.read8(0).unwrap();
@@ -32,7 +32,7 @@ fn ori_to_sr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x00, 0x7C, 0x07, 0x07, // ORI #$0707,SR
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(Instruction::OriToSr, cpu.decoder.decode(0x007C));
 
     cpu.reset(&mut bus);
@@ -49,7 +49,7 @@ fn subi() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x04, 0x00, 0x00, 0x01, // SUBI.B #0,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Subi(Size::Byte, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x0400)
@@ -72,7 +72,7 @@ fn btst() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x01, 0x3C, 0x00, 0x01, // BTST D0,#1
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Btst(Some(0), EffectiveAddress::Immediate),
         cpu.decoder.decode(0x013C)
@@ -92,7 +92,7 @@ fn bchg() {
         0x08, 0x40, 0x00, 0x01, // BCHG #1,D0
         0x08, 0x40, 0x00, 0x01, // BCHG #1,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Bchg(None, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x0840)
@@ -117,7 +117,7 @@ fn bclr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x08, 0x80, 0x00, 0x01, // BCLR #1,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Bclr(None, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x0880)
@@ -136,7 +136,7 @@ fn bset() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x08, 0xC0, 0x00, 0x01, // BSET #1,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Bset(None, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x08C0)
@@ -156,7 +156,7 @@ fn movea() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x30, 0x40, // MOVEA.W D0,A0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Movea(Size::Word, EffectiveAddress::DataRegister(0), 0),
         cpu.decoder.decode(0x3040)
@@ -177,7 +177,7 @@ fn r#move() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x12, 0x00, // MOVE.B D1,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Move(
             Size::Byte,
@@ -201,7 +201,7 @@ fn move_from_sr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x40, 0xC0, // MOVE SR,D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::MoveFromSr(EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x40C0)
@@ -221,7 +221,7 @@ fn move_to_ccr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x44, 0xC0, // MOVE D0,CCR
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::MoveToCcr(EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x44C0)
@@ -241,7 +241,7 @@ fn move_to_sr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x46, 0xC0, // MOVE D0,SR
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::MoveToSr(EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x46C0)
@@ -261,7 +261,7 @@ fn negx() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x40, 0x80, // NEGX.L D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Negx(Size::Long, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x4080)
@@ -286,7 +286,7 @@ fn clr() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x42, 0x40, // CLR.W D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Clr(Size::Word, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x4240)
@@ -312,7 +312,7 @@ fn neg() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x44, 0x00, // NEG.B D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Neg(Size::Byte, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x4400)
@@ -337,7 +337,7 @@ fn not() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x46, 0x40, // NOT.W D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Not(Size::Word, EffectiveAddress::DataRegister(0)),
         cpu.decoder.decode(0x4640)
@@ -361,7 +361,7 @@ fn ext() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x48, 0x80, // EXT.W D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(Instruction::Ext(Size::Word, 0), cpu.decoder.decode(0x4880));
 
     cpu.reset(&mut bus);
@@ -382,7 +382,7 @@ fn swap() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x48, 0x40, // SWAP D0
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(Instruction::Swap(0), cpu.decoder.decode(0x4840));
 
     cpu.reset(&mut bus);
@@ -403,7 +403,7 @@ fn pea() {
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
         0x48, 0x78, 0x04, 0x00 // PEA ($0400).W
     ]);
-    let mut cpu = Cpu::new(Version::MC68000);
+    let mut cpu = Cpu::new();
     assert_eq!(
         Instruction::Pea(EffectiveAddress::AbsoluteShort),
         cpu.decoder.decode(0x4878)

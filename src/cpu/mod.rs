@@ -24,12 +24,6 @@ enum Exception {
     PrivilegeViolation,
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Version {
-    MC68000 = 0,
-    MC68010 = 1,
-}
-
 enum StatusFlag {
     Carry = 0x0001,
     Overflow = 0x0002,
@@ -52,7 +46,6 @@ enum ComputedEffectiveAddress {
 
 #[derive(Debug)]
 pub struct Cpu {
-    version: Version,
     data: [u32; 8],
     addr: [u32; 7],
     pc: u32,
@@ -66,9 +59,8 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new(version: Version) -> Self {
+    pub fn new() -> Self {
         Self {
-            version,
             data: [0; 8],
             addr: [0; 7],
             pc: 0,
@@ -76,7 +68,7 @@ impl Cpu {
             ssp: 0,
             sr: 0,
 
-            decoder: Decoder::new(version),
+            decoder: Decoder::new(),
 
             is_stopped: false,
         }
@@ -141,12 +133,7 @@ impl Cpu {
 
     #[inline]
     pub fn set_sr(&mut self, value: u16) {
-        let sr_mask = if self.version <= Version::MC68010 {
-            0xA71F
-        } else {
-            0xF71F
-        };
-        self.sr = value & sr_mask;
+        self.sr = value & 0xF71f;
     }
 
     #[inline]

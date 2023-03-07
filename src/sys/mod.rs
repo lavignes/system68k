@@ -1,6 +1,6 @@
 use crate::{
     bus::{self, Bus},
-    cpu::{Cpu, Version},
+    cpu::Cpu,
 };
 
 pub struct System {
@@ -13,7 +13,7 @@ impl System {
     #[inline]
     pub fn new<Rom: AsRef<[u8]>>(rom: Rom) -> Self {
         Self {
-            cpu: Cpu::new(Version::MC68000),
+            cpu: Cpu::new(),
             rom: rom.as_ref().to_vec(),
             ram: vec![0; 0x01000000],
         }

@@ -1,5 +1,3 @@
-use super::Version;
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Size {
     Byte,
@@ -113,8 +111,7 @@ pub enum Instruction {
 }
 
 lazy_static::lazy_static! {
-    static ref TABLE_MC68000: Vec<Instruction> = init_table(Version::MC68000);
-    static ref TABLE_MC68010: Vec<Instruction> = init_table(Version::MC68010);
+    static ref TABLE: Vec<Instruction> = init_table();
 }
 
 #[derive(Debug)]
@@ -124,15 +121,8 @@ pub struct Decoder {
 
 impl Decoder {
     #[inline]
-    pub fn new(version: Version) -> Self {
-        match version {
-            Version::MC68000 => Self {
-                table: &TABLE_MC68000,
-            },
-            Version::MC68010 => Self {
-                table: &TABLE_MC68010,
-            },
-        }
+    pub fn new() -> Self {
+        Self { table: &TABLE }
     }
 
     #[inline]
@@ -140,34 +130,34 @@ impl Decoder {
         self.table[opcode as usize]
     }
 }
-fn init_table(version: Version) -> Vec<Instruction> {
+fn init_table() -> Vec<Instruction> {
     let mut table = vec![Instruction::Illegal; 65536];
     for opcode in 0..table.len() {
         let opcode = opcode as u16;
         table[opcode as usize] = match (opcode & 0xF000) >> 12 {
-            0x0 => decode_0(version, opcode),
-            0x1 => decode_1(version, opcode),
-            0x2 => decode_2(version, opcode),
-            0x3 => decode_3(version, opcode),
-            0x4 => decode_4(version, opcode),
-            0x5 => decode_5(version, opcode),
-            0x6 => decode_6(version, opcode),
-            0x7 => decode_7(version, opcode),
-            0x8 => decode_8(version, opcode),
-            0x9 => decode_9(version, opcode),
-            0xA => decode_a(version, opcode),
-            0xB => decode_b(version, opcode),
-            0xC => decode_c(version, opcode),
-            0xD => decode_d(version, opcode),
-            0xE => decode_e(version, opcode),
-            0xF => decode_f(version, opcode),
+            0x0 => decode_0(opcode),
+            0x1 => decode_1(opcode),
+            0x2 => decode_2(opcode),
+            0x3 => decode_3(opcode),
+            0x4 => decode_4(opcode),
+            0x5 => decode_5(opcode),
+            0x6 => decode_6(opcode),
+            0x7 => decode_7(opcode),
+            0x8 => decode_8(opcode),
+            0x9 => decode_9(opcode),
+            0xA => decode_a(opcode),
+            0xB => decode_b(opcode),
+            0xC => decode_c(opcode),
+            0xD => decode_d(opcode),
+            0xE => decode_e(opcode),
+            0xF => decode_f(opcode),
             _ => unreachable!(),
         }
     }
     table
 }
 
-fn ea_type0(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+fn ea_type0(mode: u8, register: u8) -> Option<EffectiveAddress> {
     match mode {
         0b000 => Some(EffectiveAddress::DataRegister(register)),
         0b001 => None,
@@ -185,7 +175,7 @@ fn ea_type0(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
     }
 }
 
-fn ea_type1(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+fn ea_type1(mode: u8, register: u8) -> Option<EffectiveAddress> {
     match mode {
         0b000 => Some(EffectiveAddress::DataRegister(register)),
         0b001 => None,
@@ -206,7 +196,7 @@ fn ea_type1(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
     }
 }
 
-fn ea_type2(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+fn ea_type2(mode: u8, register: u8) -> Option<EffectiveAddress> {
     match mode {
         0b000 => Some(EffectiveAddress::DataRegister(register)),
         0b001 => None,
@@ -226,7 +216,7 @@ fn ea_type2(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
     }
 }
 
-fn ea_type3(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+fn ea_type3(mode: u8, register: u8) -> Option<EffectiveAddress> {
     match mode {
         0b000 => Some(EffectiveAddress::DataRegister(register)),
         0b001 => Some(EffectiveAddress::AddressRegister(register)),
@@ -247,7 +237,7 @@ fn ea_type3(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
     }
 }
 
-fn ea_type4(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress> {
+fn ea_type4(mode: u8, register: u8) -> Option<EffectiveAddress> {
     match mode {
         0b000 => None,
         0b001 => None,
@@ -267,7 +257,7 @@ fn ea_type4(version: Version, mode: u8, register: u8) -> Option<EffectiveAddress
     }
 }
 
-fn decode_0(version: Version, opcode: u16) -> Instruction {
+fn decode_0(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
     let bits6_7 = ((opcode & 0b0000_0000_1100_0000) >> 6) as u8;
@@ -285,7 +275,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
                     };
                 }
 
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -305,7 +295,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
                     };
                 }
 
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -317,7 +307,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
             }
 
             0b010 => {
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -329,7 +319,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
             }
 
             0b011 => {
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -349,7 +339,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
                     };
                 }
 
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -361,7 +351,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
             }
 
             0b110 => {
-                if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                     let size = match bits6_7 {
                         0 => Size::Byte,
                         1 => Size::Word,
@@ -373,7 +363,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
             }
 
             0b100 => {
-                if let Some(ea) = ea_type2(version, bits3_5, bits0_2) {
+                if let Some(ea) = ea_type2(bits3_5, bits0_2) {
                     return match bits6_7 {
                         0 => Instruction::Btst(None, ea),
                         1 => Instruction::Bchg(None, ea),
@@ -392,16 +382,16 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
         let register = Some(bits9_11);
         return match bits6_7 {
             // BTST Dn,<ea> has a weird edge-case where is allows immediate destination
-            0 if let Some(ea) = ea_type1(version, bits3_5, bits0_2) => {
+            0 if let Some(ea) = ea_type1(bits3_5, bits0_2) => {
                 Instruction::Btst(register, ea)
             }
-            1 if let Some(ea) = ea_type2(version, bits3_5, bits0_2) => {
+            1 if let Some(ea) = ea_type2(bits3_5, bits0_2) => {
                 Instruction::Bchg(register, ea)
             }
-            2 if let Some(ea) = ea_type2(version, bits3_5, bits0_2) => {
+            2 if let Some(ea) = ea_type2(bits3_5, bits0_2) => {
                  Instruction::Bclr(register, ea)
             }
-            3 if let Some(ea) = ea_type2(version, bits3_5, bits0_2) => {
+            3 if let Some(ea) = ea_type2(bits3_5, bits0_2) => {
                 Instruction::Bset(register, ea)
             }
             _ => Instruction::Illegal
@@ -421,7 +411,7 @@ fn decode_0(version: Version, opcode: u16) -> Instruction {
     Instruction::Movep(size, target, bits9_11, bits0_2)
 }
 
-fn decode_1(version: Version, opcode: u16) -> Instruction {
+fn decode_1(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
     let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
@@ -431,59 +421,59 @@ fn decode_1(version: Version, opcode: u16) -> Instruction {
         return Instruction::Illegal;
     }
 
-    let src = ea_type0(version, bits3_5, bits0_2);
-    let dst = ea_type1(version, bits6_8, bits9_11);
+    let src = ea_type0(bits3_5, bits0_2);
+    let dst = ea_type1(bits6_8, bits9_11);
     match (src, dst) {
         (Some(src), Some(dst)) => Instruction::Move(Size::Byte, src, dst),
         _ => Instruction::Illegal,
     }
 }
 
-fn decode_2(version: Version, opcode: u16) -> Instruction {
+fn decode_2(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
     let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
     let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
 
     if bits6_8 == 1 {
-        return if let Some(ea) = ea_type3(version, bits3_5, bits0_2) {
+        return if let Some(ea) = ea_type3(bits3_5, bits0_2) {
             Instruction::Movea(Size::Long, ea, bits9_11)
         } else {
             Instruction::Illegal
         };
     }
 
-    let src = ea_type0(version, bits3_5, bits0_2);
-    let dst = ea_type1(version, bits6_8, bits9_11);
+    let src = ea_type0(bits3_5, bits0_2);
+    let dst = ea_type1(bits6_8, bits9_11);
     match (src, dst) {
         (Some(src), Some(dst)) => Instruction::Move(Size::Long, src, dst),
         _ => Instruction::Illegal,
     }
 }
 
-fn decode_3(version: Version, opcode: u16) -> Instruction {
+fn decode_3(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
     let bits6_8 = ((opcode & 0b0000_0001_1100_0000) >> 6) as u8;
     let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
 
     if bits6_8 == 1 {
-        return if let Some(ea) = ea_type3(version, bits3_5, bits0_2) {
+        return if let Some(ea) = ea_type3(bits3_5, bits0_2) {
             Instruction::Movea(Size::Word, ea, bits9_11)
         } else {
             Instruction::Illegal
         };
     }
 
-    let src = ea_type0(version, bits3_5, bits0_2);
-    let dst = ea_type1(version, bits6_8, bits9_11);
+    let src = ea_type0(bits3_5, bits0_2);
+    let dst = ea_type1(bits6_8, bits9_11);
     match (src, dst) {
         (Some(src), Some(dst)) => Instruction::Move(Size::Word, src, dst),
         _ => Instruction::Illegal,
     }
 }
 
-fn decode_4(version: Version, opcode: u16) -> Instruction {
+fn decode_4(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits0_3 = ((opcode & 0b0000_0000_0000_1111) >> 0) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
@@ -500,15 +490,15 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
     if bit11 == 0 {
         if bits6_7 == 0b11 {
             match bits8_11 {
-                0b0000 if let Some(ea) = ea_type0(version, bits3_5, bits0_2) => {
+                0b0000 if let Some(ea) = ea_type0(bits3_5, bits0_2) => {
                     return Instruction::MoveFromSr(ea);
                 }
 
-                0b0100 if let Some(ea) = ea_type1(version, bits3_5, bits0_2)=> {
+                0b0100 if let Some(ea) = ea_type1(bits3_5, bits0_2)=> {
                     return Instruction::MoveToCcr(ea);
                 }
 
-                0b0110 if let Some(ea) = ea_type1(version, bits3_5, bits0_2) => {
+                0b0110 if let Some(ea) = ea_type1(bits3_5, bits0_2) => {
                     return Instruction::MoveToSr(ea);
                 }
 
@@ -523,7 +513,7 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
             _ => None,
         };
 
-        if let (Some(ea), Some(size)) = (ea_type0(version, bits3_5, bits0_2), size) {
+        if let (Some(ea), Some(size)) = (ea_type0(bits3_5, bits0_2), size) {
             match bits8_11 {
                 0b0000 => return Instruction::Negx(size, ea),
                 0b0010 => return Instruction::Clr(size, ea),
@@ -541,7 +531,7 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
         }
 
         if bits6_7 == 0 {
-            if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+            if let Some(ea) = ea_type0(bits3_5, bits0_2) {
                 return Instruction::Nbcd(ea);
             }
         }
@@ -549,7 +539,7 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
         if bits6_8 == 0b001 {
             if bits3_5 == 0 {
                 return Instruction::Swap(bits0_2);
-            } else if let Some(ea) = ea_type4(version, bits3_5, bits0_2) {
+            } else if let Some(ea) = ea_type4(bits3_5, bits0_2) {
                 return Instruction::Pea(ea);
             }
         }
@@ -561,7 +551,7 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
     }
 
     if bits6_11 == 0b101011 {
-        if let Some(ea) = ea_type0(version, bits3_5, bits0_2) {
+        if let Some(ea) = ea_type0(bits3_5, bits0_2) {
             return Instruction::Tas(ea);
         }
     }
@@ -573,7 +563,7 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
             0b10 => Some(Size::Byte),
             _ => None,
         };
-        if let (Some(ea), Some(size)) = (ea_type0(version, bits3_5, bits0_2), size) {
+        if let (Some(ea), Some(size)) = (ea_type0(bits3_5, bits0_2), size) {
             return Instruction::Tst(size, ea);
         }
     }
@@ -591,15 +581,15 @@ fn decode_4(version: Version, opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_5(version: Version, opcode: u16) -> Instruction {
+fn decode_5(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_6(version: Version, opcode: u16) -> Instruction {
+fn decode_6(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_7(version: Version, opcode: u16) -> Instruction {
+fn decode_7(opcode: u16) -> Instruction {
     let bit8 = ((opcode & 0b0000_0001_0000_0000) >> 8) as u8;
     let bits9_11 = ((opcode & 0b0000_1110_0000_0000) >> 9) as u8;
     if bit8 == 1 {
@@ -609,34 +599,34 @@ fn decode_7(version: Version, opcode: u16) -> Instruction {
     Instruction::Moveq(data, bits9_11)
 }
 
-fn decode_8(version: Version, opcode: u16) -> Instruction {
+fn decode_8(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_9(version: Version, opcode: u16) -> Instruction {
+fn decode_9(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_a(version: Version, opcode: u16) -> Instruction {
+fn decode_a(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_b(version: Version, opcode: u16) -> Instruction {
+fn decode_b(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_c(version: Version, opcode: u16) -> Instruction {
+fn decode_c(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_d(version: Version, opcode: u16) -> Instruction {
+fn decode_d(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_e(version: Version, opcode: u16) -> Instruction {
+fn decode_e(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
 
-fn decode_f(version: Version, opcode: u16) -> Instruction {
+fn decode_f(opcode: u16) -> Instruction {
     Instruction::Illegal
 }
