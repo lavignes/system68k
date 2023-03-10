@@ -82,7 +82,7 @@ pub enum Instruction {
     Illegal,
     Tas(EffectiveAddress),
     Tst(Size, EffectiveAddress),
-    Trap(u8),
+    Trap(u16),
     Link(u8),
     Unlk(u8),
     MoveUsp(Target, u8),
@@ -381,7 +381,7 @@ fn decode_0(opcode: u16) -> Instruction {
     if bits3_5 != 1 {
         let register = Some(bits9_11);
         return match bits6_7 {
-            // BTST Dn,<ea> has a weird edge-case where is allows immediate destination
+            // BTST Dn,<ea> has a weird edge-case where it allows immediate "destination"
             0 if let Some(ea) = ea_type1(bits3_5, bits0_2) => {
                 Instruction::Btst(register, ea)
             }
@@ -476,6 +476,7 @@ fn decode_3(opcode: u16) -> Instruction {
 fn decode_4(opcode: u16) -> Instruction {
     let bits0_2 = ((opcode & 0b0000_0000_0000_0111) >> 0) as u8;
     let bits0_3 = ((opcode & 0b0000_0000_0000_1111) >> 0) as u8;
+    let bit3 = ((opcode & 0b0000_0000_0000_1000) >> 3) as u8;
     let bits3_5 = ((opcode & 0b0000_0000_0011_1000) >> 3) as u8;
     let bits3_11 = ((opcode & 0b0000_1111_1111_1000) >> 3) as u16;
     let bits4_11 = ((opcode & 0b0000_1111_1111_0000) >> 4) as u8;
@@ -559,8 +560,8 @@ fn decode_4(opcode: u16) -> Instruction {
     if bits8_11 == 0b1010 {
         let size = match bits6_7 {
             0b00 => Some(Size::Byte),
-            0b01 => Some(Size::Byte),
-            0b10 => Some(Size::Byte),
+            0b01 => Some(Size::Word),
+            0b10 => Some(Size::Long),
             _ => None,
         };
         if let (Some(ea), Some(size)) = (ea_type0(bits3_5, bits0_2), size) {
@@ -576,6 +577,39 @@ fn decode_4(opcode: u16) -> Instruction {
         return Instruction::Link(bits0_2);
     } else if bits3_11 == 0b111001011 {
         return Instruction::Unlk(bits0_2);
+    }
+
+    if bits4_11 == 0b11100110 {
+        return if bit3 == 0 {
+            Instruction::MoveUsp(Target::FromRegister, bits0_2)
+        } else {
+            Instruction::MoveUsp(Target::ToRegister, bits0_2)
+        };
+    }
+
+    match opcode {
+        0b0100111001110000 => {
+            return Instruction::Reset;
+        }
+        0b0100111001110001 => {
+            return Instruction::Nop;
+        }
+        0b0100111001110010 => {
+            return Instruction::Stop;
+        }
+        0b0100111001110011 => {
+            return Instruction::Rte;
+        }
+        0b0100111001110101 => {
+            return Instruction::Rts;
+        }
+        0b0100111001110110 => {
+            return Instruction::Trapv;
+        }
+        0b0100111001110111 => {
+            return Instruction::Rtr;
+        }
+        _ => {}
     }
 
     Instruction::Illegal

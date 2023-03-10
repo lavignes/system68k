@@ -175,7 +175,7 @@ fn movea() {
 fn r#move() {
     #[rustfmt::skip]
     let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
-        0x12, 0x00, // MOVE.B D1,D0
+        0x12, 0x00, // MOVE.B D0,D1
     ]);
     let mut cpu = Cpu::new();
     assert_eq!(
@@ -418,4 +418,47 @@ fn pea() {
     assert_eq!(bus.mem()[0x00000FFD], 0x78);
     assert_eq!(bus.mem()[0x00000FFE], 0x04);
     assert_eq!(bus.mem()[0x00000FFF], 0x00);
+}
+
+#[test]
+fn tas() {
+    #[rustfmt::skip]
+    let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
+        0x4A, 0xC0, // TAS D0
+    ]);
+    let mut cpu = Cpu::new();
+    assert_eq!(
+        Instruction::Tas(EffectiveAddress::DataRegister(0)),
+        cpu.decoder.decode(0x4AC0)
+    );
+
+    cpu.reset(&mut bus);
+    cpu.data[0] = 0x80;
+
+    cpu.step(&mut bus);
+
+    assert!(!cpu.flag(StatusFlag::Zero));
+    assert!(cpu.flag(StatusFlag::Negative));
+    assert_eq!(cpu.data[0], 0x80);
+}
+
+#[test]
+fn tst() {
+    #[rustfmt::skip]
+    let mut bus = TestBus::new(ROM1, 0x0400, 0x1000, &[
+        0x4A, 0x07, // TST.B D7
+    ]);
+    let mut cpu = Cpu::new();
+    assert_eq!(
+        Instruction::Tst(Size::Byte, EffectiveAddress::DataRegister(7)),
+        cpu.decoder.decode(0x4A07)
+    );
+
+    cpu.reset(&mut bus);
+    cpu.data[7] = 0x80;
+
+    cpu.step(&mut bus);
+
+    assert!(!cpu.flag(StatusFlag::Zero));
+    assert!(cpu.flag(StatusFlag::Negative));
 }

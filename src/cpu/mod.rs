@@ -14,7 +14,7 @@ enum Exception {
     #[error("bus error")]
     BusError(#[from] bus::Error),
 
-    #[error("illegal instruction {0:x}")]
+    #[error("illegal instruction {0:2x}")]
     IllegalInstruction(u16),
 
     #[error("integer divide by zero")]
@@ -427,13 +427,13 @@ impl Cpu {
     }
 
     #[inline]
-    fn push_word(&mut self, value: u32, bus: &mut dyn Bus) -> Result<(), Exception> {
+    fn push_word(&mut self, value: u16, bus: &mut dyn Bus) -> Result<(), Exception> {
         if self.flag(StatusFlag::Supervisor) {
             self.ssp = self.ssp.wrapping_sub(2);
-            self.write_long(self.ssp, value, bus)
+            self.write_word(self.ssp, value, bus)
         } else {
             self.usp = self.usp.wrapping_sub(2);
-            self.write_long(self.usp, value, bus)
+            self.write_word(self.usp, value, bus)
         }
     }
 
@@ -448,6 +448,31 @@ impl Cpu {
         }
     }
 
+    #[inline]
+    fn pop_word(&mut self, bus: &mut dyn Bus) -> Result<u16, Exception> {
+        if self.flag(StatusFlag::Supervisor) {
+            let result = self.read_word(self.ssp, bus);
+            self.ssp = self.ssp.wrapping_add(2);
+            result
+        } else {
+            let result = self.read_word(self.usp, bus);
+            self.usp = self.usp.wrapping_add(2);
+            result
+        }
+    }
+
+    #[inline]
+    fn pop_long(&mut self, bus: &mut dyn Bus) -> Result<u32, Exception> {
+        if self.flag(StatusFlag::Supervisor) {
+            let result = self.read_long(self.ssp, bus);
+            self.ssp = self.ssp.wrapping_add(4);
+            result
+        } else {
+            let result = self.read_long(self.usp, bus);
+            self.usp = self.usp.wrapping_add(4);
+            result
+        }
+    }
     fn decode_execute(&mut self, bus: &mut dyn Bus) -> Result<(), Exception> {
         let opcode = self.fetch_word(bus)?;
 
@@ -1123,6 +1148,135 @@ impl Cpu {
                 self.set_flag(StatusFlag::Overflow, false);
                 self.set_flag(StatusFlag::Carry, false);
                 self.write_ea_byte(ea, value | 0x80, bus)
+            }
+
+            Instruction::Tst(size, ea) => match size {
+                Size::Byte => {
+                    let ea = self.compute_ea(ea, 1, bus)?;
+                    let value = self.read_ea_byte(ea, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x80) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    Ok(())
+                }
+
+                Size::Word => {
+                    let ea = self.compute_ea(ea, 2, bus)?;
+                    let value = self.read_ea_word(ea, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x8000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    Ok(())
+                }
+
+                Size::Long => {
+                    let ea = self.compute_ea(ea, 4, bus)?;
+                    let value = self.read_ea_long(ea, bus)?;
+                    self.set_flag(StatusFlag::Zero, value == 0);
+                    self.set_flag(StatusFlag::Negative, (value & 0x80000000) != 0);
+                    self.set_flag(StatusFlag::Overflow, false);
+                    self.set_flag(StatusFlag::Carry, false);
+                    Ok(())
+                }
+            },
+
+            Instruction::Trap(vector) => {
+                let vector = 32 + vector;
+                self.set_flag(StatusFlag::Supervisor, true);
+                self.push_word(vector, bus)?;
+                self.push_long(self.pc, bus)?;
+                self.push_word(self.sr, bus)
+            }
+
+            Instruction::Rte => {
+                self.assert_supervisor()?;
+                let format = self.read_word(self.ssp.wrapping_add(6), bus)? >> 12;
+
+                self.set_sr(self.pop_word(bus)?);
+                self.pc = self.pop_long(bus)?;
+                let vector_format = self.pop_word(bus)?;
+
+                let vector = vector_format & 0x0FFF;
+                let format = (vector_format & 0xF000) >> 12;
+                match format {
+                    0b0000 | 0b0001 => {}
+                    0b0010 | 0b0011 => {
+                        self.pop_long(bus)?; // address
+                    }
+                    0b1000 => {
+                        // return from bus error
+                        self.pop_word(bus)?;
+                        self.pop_long(bus)?; // fault address
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_long(bus)?;
+                        for _ in 0..16 {
+                            self.pop_word(bus)?;
+                        }
+                    }
+                    0b1001 => {
+                        self.pop_long(bus)?; // address
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                        self.pop_word(bus)?;
+                    }
+                    0b1010 => {
+                        for _ in 0..12 {
+                            self.pop_word(bus)?;
+                        }
+                    }
+                    0b1011 => {
+                        for _ in 0..42 {
+                            self.pop_word(bus)?;
+                        }
+                    }
+                    _ => todo!("what does a real m68k do on a weird exception type?"),
+                }
+
+                self.set_flag(StatusFlag::Supervisor, false);
+                Ok(())
+            }
+
+            Instruction::Rts => {
+                self.pc = self.pop_long(bus)?;
+                Ok(())
+            }
+
+            Instruction::Trapv => {
+                if !self.flag(StatusFlag::Overflow) {
+                    return Ok(());
+                }
+                self.set_flag(StatusFlag::Supervisor, true);
+                self.push_word(0x0007, bus)?;
+                self.push_long(self.pc, bus)?;
+                self.push_word(self.sr, bus)
+            }
+
+            Instruction::Rtr => {
+                let ccr = self.pop_word(bus)? & 0x00FF;
+                self.set_sr((self.sr & 0xFF00) | ccr);
+                self.pc = self.pop_long(bus)?;
+                Ok(())
+            }
+
+            Instruction::Jsr(ea) => {
+                let ea = self.compute_ea(ea, 4, bus)?;
+                let pc = self.read_ea_long(ea, bus)?;
+                self.push_long(self.pc, bus)?;
+                self.pc = pc;
+                Ok(())
+            }
+
+            Instruction::Jmp(ea) => {
+                let ea = self.compute_ea(ea, 4, bus)?;
+                self.pc = self.read_ea_long(ea, bus)?;
+                Ok(())
             }
 
             Instruction::Moveq(data, register) => {
